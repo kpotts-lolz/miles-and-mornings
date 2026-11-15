@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Miles &amp; Mornings</title>
+  <meta name="description" content="A handmade log of weekly running distance and training load." />
+  <meta name="theme-color" content="#F3EADB" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bagel+Fat+One&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="grain" aria-hidden="true"></div>
+
+  <header class="masthead">
+    <p class="eyebrow">the running log</p>
+    <h1 class="wordmark">Miles <span class="amp">&amp;</span> Mornings</h1>
+  </header>
+
+  <main class="wall">
+   <div class="col col--left">
+    <!-- HERO: this week -->
+    <section class="card hero" aria-labelledby="hero-label">
+      <span class="tape tape--hero" aria-hidden="true"></span>
+      <p class="card-kicker" id="hero-label">This week · <span id="hero-week">—</span></p>
+
+      <p class="hero-number">
+        <span id="hero-km" class="hero-km">0</span><span class="hero-unit">km</span>
+      </p>
+
+      <div class="trend">
+        <div class="trend-bars" id="trend-bars" aria-hidden="true"></div>
+        <p class="trend-text" id="trend-text">Loading your weeks…</p>
+      </div>
+    </section>
+
+    <!-- Goals -->
+    <section class="card goals-card" aria-labelledby="goals-title">
+      <span class="tape tape--left" aria-hidden="true"></span>
+      <div class="card-head">
+        <div>
+          <h2 class="card-title" id="goals-title">Goals</h2>
+          <p class="card-sub">the times I'm chasing</p>
+        </div>
+      </div>
+      <ul class="goals" id="goals"></ul>
+    </section>
+   </div>
+
+   <div class="col col--right">
+    <!-- Weekly distance -->
+    <section class="card chart-card" aria-labelledby="dist-title">
+      <span class="tape tape--left" aria-hidden="true"></span>
+      <div class="card-head">
+        <div>
+          <h2 class="card-title" id="dist-title">Weekly distance</h2>
+          <p class="card-sub" id="dist-sub">kilometres per week</p>
+        </div>
+        <div class="range" role="group" aria-label="Time range">
+          <button type="button" data-range="12">12w</button>
+          <button type="button" data-range="26" aria-pressed="true">26w</button>
+          <button type="button" data-range="all">All</button>
+        </div>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="distance-chart" role="img" aria-label="Bar chart of weekly running distance in kilometres, with an average line"></canvas>
+      </div>
+    </section>
+
+    <!-- TRIMP -->
+    <section class="card chart-card chart-card--trimp" aria-labelledby="trimp-title">
+      <span class="tape tape--right" aria-hidden="true"></span>
+      <div class="card-head">
+        <div>
+          <h2 class="card-title" id="trimp-title">Training load</h2>
+          <p class="card-sub">TRIMP per week · how hard the miles felt</p>
+        </div>
+      </div>
+      <div class="chart-wrap chart-wrap--short">
+        <canvas id="trimp-chart" role="img" aria-label="Bar chart of weekly TRIMP training load"></canvas>
+      </div>
+    </section>
+
+    <!-- Recent races -->
+    <section class="card races-card" aria-labelledby="races-title">
+      <span class="tape tape--right" aria-hidden="true"></span>
+      <div class="card-head">
+        <div>
+          <h2 class="card-title" id="races-title">Recent races</h2>
+          <p class="card-sub">finish time · average pace</p>
+        </div>
+      </div>
+      <ol class="races" id="races"></ol>
+    </section>
+   </div>
+
+    <!-- Mood board -->
+    <section class="board" aria-labelledby="board-title">
+      <div class="board-head">
+        <h2 class="card-title" id="board-title">The wall</h2>
+        <p class="card-sub">finish lines, and the feeling I'm chasing</p>
+      </div>
+      <div class="collage" id="collage">
+        <span class="sticker" aria-hidden="true">keep<br>going</span>
+      </div>
+      <p class="board-hint">swipe for more →</p>
+    </section>
+  </main>
+
+  <dialog class="lightbox" id="lightbox" aria-label="Photo">
+    <form method="dialog"><button class="lightbox-close" aria-label="Close">×</button></form>
+    <img id="lightbox-img" alt="" />
+    <p class="lightbox-caption" id="lightbox-caption"></p>
+  </dialog>
+
+  <footer class="foot">
+    <p id="foot-text"></p>
+  </footer>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
