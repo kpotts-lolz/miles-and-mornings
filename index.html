@@ -20,7 +20,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Bagel+Fat+One&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet" />
 
-  <link rel="stylesheet" href="styles.css?v=8" />
+  <link rel="stylesheet" href="styles.css?v=12" />
 </head>
 <body>
   <div class="grain" aria-hidden="true"></div>
@@ -75,12 +75,12 @@
       <div class="card-head">
         <div>
           <h2 class="card-title" id="dist-title">Weekly distance</h2>
-          <p class="card-sub" id="dist-sub">kilometres per week</p>
+          <p class="card-sub">kilometres per week</p>
         </div>
-        <div class="range" role="group" aria-label="Time range">
-          <button type="button" data-range="12">12w</button>
-          <button type="button" data-range="26" aria-pressed="true">26w</button>
-          <button type="button" data-range="all">All</button>
+        <div class="range" role="group" aria-label="Weekly distance time range" data-chart="distance">
+          <button type="button" data-range="3m" aria-pressed="true">3 months</button>
+          <button type="button" data-range="6m">6 months</button>
+          <button type="button" data-range="ytd">This year</button>
         </div>
       </div>
       <div class="chart-wrap">
@@ -99,6 +99,11 @@
             <abbr title="Training Impulse">TRIMP</abbr> (Training Impulse) integrates training volume and intensity
             into a single “load” score. Training load = volume × intensity.
           </p>
+        </div>
+        <div class="range" role="group" aria-label="Training load time range" data-chart="trimp">
+          <button type="button" data-range="3m" aria-pressed="true">3 months</button>
+          <button type="button" data-range="6m">6 months</button>
+          <button type="button" data-range="ytd">This year</button>
         </div>
       </div>
       <div class="chart-wrap chart-wrap--short">
@@ -144,7 +149,7 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <!-- Bump ?v= after editing these files so browsers don't reuse old cached copies -->
-  <script src="sheets.js?v=8"></script>
-  <script src="app.js?v=8"></script>
+  <script src="sheets.js?v=12"></script>
+  <script src="app.js?v=12"></script>
 </body>
 </html>

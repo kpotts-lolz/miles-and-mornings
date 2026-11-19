@@ -314,18 +314,51 @@ const avgLabelPlugin = {
 
 let distanceChart, trimpChart;
 
-function renderCharts(all, range) {
-  const rows = range === "all" ? all : all.slice(-Number(range));
-  const offset = all.length - rows.length; // keeps bar colours stable across ranges
-  const colors = rows.map((_, i) => colorAt(offset + i));
-  const lastIdx = rows.length - 1;
-  const narrow = window.innerWidth < 760;
-  const radius = rows.length > 40 ? 4 : narrow ? 6 : 10;
+/**
+ * Weeks to show for a range button, by date:
+ *   "3m"  → weeks overlapping the last 3 months (from today, same day 3 months back)
+ *   "6m"  → same, 6 months
+ *   "ytd" → weeks overlapping this calendar year (from January 1)
+ * A week counts if any of its 7 days fall in the period, so the week containing
+ * January 1 is included in "This year".
+ */
+function weeksInRange(all, range) {
+  const today = new Date();
+  const from =
+    range === "ytd" ? new Date(today.getFullYear(), 0, 1)
+    : new Date(today.getFullYear(), today.getMonth() - (range === "6m" ? 6 : 3), today.getDate());
 
-  // Average of exactly the weeks on screen, so it changes with 12w / 26w / All.
+  if (all.some((r) => !r.start)) {
+    // Undated rows (unusual CSV labels): fall back to roughly the same number of weeks.
+    const n = range === "6m" ? 26 : range === "ytd" ? Math.ceil((today - from) / 6048e5) + 1 : 13;
+    return all.slice(-n);
+  }
+  return all.filter((r) => {
+    const end = new Date(r.start);
+    end.setDate(end.getDate() + 6);
+    return end >= from;
+  });
+}
+
+/** Shared setup for a chart over a date range: the weeks, colours and bar shape. */
+function chartWeeks(all, range) {
+  const rows = weeksInRange(all, range);
+  const offset = all.length - rows.length; // keeps bar colours stable across ranges
+  const narrow = window.innerWidth < 760;
+  return {
+    rows,
+    colors: rows.map((_, i) => colorAt(offset + i)),
+    lastIdx: rows.length - 1,
+    radius: rows.length > 40 ? 4 : narrow ? 6 : 10,
+  };
+}
+
+function renderDistance(all, range) {
+  const { rows, colors, lastIdx, radius } = chartWeeks(all, range);
+
+  // Average of exactly the weeks on screen, so it changes with the range.
   const avgKm = rows.reduce((s, r) => s + r.km, 0) / (rows.length || 1);
 
-  /* ---- Distance ---- */
   const distData = {
     labels: rows.map((r) => r.label),
     datasets: [
@@ -369,7 +402,10 @@ function renderCharts(all, range) {
     plugins: [avgLabelPlugin],
   });
 
-  /* ---- TRIMP ---- */
+}
+
+function renderTrimp(all, range) {
+  const { rows, colors, radius } = chartWeeks(all, range);
   const trimpOpts = baseOptions(rows, "TRIMP");
   trimpOpts.plugins.tooltip.callbacks.label = (ctx) => `TRIMP ${Math.round(ctx.parsed.y)}`;
 
@@ -395,9 +431,12 @@ function renderCharts(all, range) {
     },
     options: trimpOpts,
   });
+}
 
-  document.getElementById("dist-sub").textContent =
-    range === "all" ? `kilometres per week · all ${all.length} weeks` : `kilometres per week · last ${rows.length} weeks`;
+/** Each chart keeps its own date range. */
+function renderCharts(all) {
+  renderDistance(all, ranges.distance);
+  renderTrimp(all, ranges.trimp);
 }
 
 /* ============================================================
@@ -483,14 +522,14 @@ function clearError() {
 
 let allRows = [];   // what the page is showing now
 let csvRows = null; // weekly.csv, kept so "Disconnect" can fall back to it
-let range = "26";
+const ranges = { distance: "3m", trimp: "3m" }; // default view for both charts: last 3 months
 
 /** Draw everything that depends on the weekly rows. */
 function renderAll(rows, sourceNote) {
   allRows = rows;
   clearError();
   renderHero(rows);
-  renderCharts(rows, range);
+  renderCharts(rows);
   const first = rows[0];
   document.getElementById("foot-text").textContent =
     `${rows.length} weeks logged since ${first.start ? `${MONTHS[first.start.getMonth()]} ${first.start.getFullYear()}` : first.label}` +
@@ -498,19 +537,24 @@ function renderAll(rows, sourceNote) {
 }
 
 function setupChartControls() {
-  const buttons = document.querySelectorAll(".range button");
-  const pick = (r) => {
-    range = r;
-    buttons.forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.range === r)));
-    if (allRows.length) renderCharts(allRows, r);
-  };
-  buttons.forEach((b) => b.addEventListener("click", () => pick(b.dataset.range)));
+  // One toggle per chart: <div class="range" data-chart="distance|trimp">
+  document.querySelectorAll(".range[data-chart]").forEach((group) => {
+    const chart = group.dataset.chart;
+    const buttons = group.querySelectorAll("button");
+    buttons.forEach((b) => b.addEventListener("click", () => {
+      ranges[chart] = b.dataset.range;
+      buttons.forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+      if (!allRows.length) return;
+      if (chart === "trimp") renderTrimp(allRows, ranges.trimp);
+      else renderDistance(allRows, ranges.distance);
+    }));
+  });
 
   // Bar corner radius depends on width; redraw when crossing the breakpoint.
   let wasNarrow = window.innerWidth < 760;
   window.addEventListener("resize", () => {
     const isNarrow = window.innerWidth < 760;
-    if (isNarrow !== wasNarrow && allRows.length) { wasNarrow = isNarrow; renderCharts(allRows, range); }
+    if (isNarrow !== wasNarrow && allRows.length) { wasNarrow = isNarrow; renderCharts(allRows); }
   });
 }
 

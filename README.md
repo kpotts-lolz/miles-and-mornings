@@ -3,8 +3,8 @@
 A small, handmade replacement for Strava's training view. It's one static page showing:
 
 - **This week**: the current week's kilometres as a big number, a mini bar strip of the last 4 weeks, and their weekly average. There's deliberately no "up/down vs before" comparison.
-- **Weekly distance**: rounded bars in rotating accent colours, a 12w / 26w / All range toggle, and a dashed average line. The average is calculated from the weeks currently shown, so it changes with the toggle.
-- **Training load**: weekly TRIMP on the same timeline.
+- **Weekly distance**: rounded bars in rotating accent colours, a **3 months / 6 months / This year** toggle (3 months by default; a week counts if any of its days fall in the period, so "This year" includes the week containing January 1), and a dashed average line. The average is calculated from the weeks currently shown, so it changes with the toggle.
+- **Training load**: weekly TRIMP, with a short explanation of what TRIMP means and its own **3 months / 6 months / This year** toggle, separate from the distance chart.
 - **Goals**: target time and pace for 5K, 10K, half and marathon.
 - **Recent races**: finish time and average pace for each race.
 - **The wall**: a mood board of photos pinned up like polaroids. On desktop they overlap as a collage; on a phone they become a swipeable strip. Tap any photo to see it larger.
@@ -130,7 +130,7 @@ The sign-in lasts about an hour and survives page reloads in the same tab. After
 - Each **WEEKLY TOTALS** row gives that week's km and TRIMP, using the coach's own numbers. The week's dates come from the day rows above it.
 - The years stored behind the sheet's dates aren't reliable (later rows still say 2025), so it uses only month and day. It counts the year up from the title ("2025-26" → starts 2025) each time the dates wrap from December to January.
 - Weeks before km logging began (before Jul 21, 2025) and weeks that haven't started yet are skipped.
-- The average line isn't read from the sheet. It's the mean km of the weeks shown in the current 12w / 26w / All view.
+- The average line isn't read from the sheet. It's the mean km of the weeks shown in the current 3 months / 6 months / This year view.
 
 **Where it works:** the Connect pill appears at `http://localhost:8000` and on any `https://` address (like GitHub Pages), as long as `config.js` is there. Sign-in only succeeds from addresses listed under **Authorized JavaScript origins** in Google Cloud; anywhere else Google shows an "origin_mismatch" error. Without `config.js`, the pill stays hidden and the site uses `weekly.csv`. The sheet itself is never published or link-shared.
 
@@ -154,4 +154,4 @@ Published Sheets CSVs allow cross-origin requests, so this works from any host. 
 - **Colours** are CSS variables at the top of `styles.css`. Bar colours come from the `PALETTE` array in `app.js`, in this rotation order: blush, burnt orange, mustard, harvest olive, moss, slate. Keep the two in sync.
 - **Fonts**: *Bagel Fat One* (display) and *DM Sans* (body), both from Google Fonts. Swap them in the `<link>` in `index.html` and in `--font-display` / `--font-body`.
 - **Grain**: `.grain` in `styles.css`. Raise or lower `opacity` (currently `0.16`).
-- **Default range**: `let range = "26"` near the bottom of `app.js`.
+- **Default ranges**: `const ranges = { distance: "3m", trimp: "3m" }` near the bottom of `app.js`. Each can be `"3m"`, `"6m"` or `"ytd"`. If you change one, also move `aria-pressed="true"` to the matching button in `index.html`.
