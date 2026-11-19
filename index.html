@@ -7,11 +7,20 @@
   <meta name="description" content="A handmade log of weekly running distance and training load." />
   <meta name="theme-color" content="#F3EADB" />
 
+  <!-- Home Screen app: icon, name, full-screen -->
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Miles &amp; Mornings" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Bagel+Fat+One&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet" />
 
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=8" />
 </head>
 <body>
   <div class="grain" aria-hidden="true"></div>
@@ -19,6 +28,14 @@
   <header class="masthead">
     <p class="eyebrow">the running log</p>
     <h1 class="wordmark">Miles <span class="amp">&amp;</span> Mornings</h1>
+    <!-- Only appears at localhost:8000 or an https host, when config.js exists -->
+    <div class="source" id="source" role="status" aria-live="polite" hidden>
+      <span class="source-dot" aria-hidden="true"></span>
+      <span class="source-text" id="source-text"></span>
+      <button type="button" id="source-connect">Connect training log</button>
+      <button type="button" id="source-refresh" hidden>Refresh</button>
+      <button type="button" id="source-disconnect" hidden>Disconnect</button>
+    </div>
   </header>
 
   <main class="wall">
@@ -77,7 +94,11 @@
       <div class="card-head">
         <div>
           <h2 class="card-title" id="trimp-title">Training load</h2>
-          <p class="card-sub">TRIMP per week · how hard the miles felt</p>
+          <p class="card-sub">TRIMP per week</p>
+          <p class="card-def">
+            <abbr title="Training Impulse">TRIMP</abbr> (Training Impulse) integrates training volume and intensity
+            into a single “load” score. Training load = volume × intensity.
+          </p>
         </div>
       </div>
       <div class="chart-wrap chart-wrap--short">
@@ -122,6 +143,8 @@
   </footer>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-  <script src="app.js"></script>
+  <!-- Bump ?v= after editing these files so browsers don't reuse old cached copies -->
+  <script src="sheets.js?v=8"></script>
+  <script src="app.js?v=8"></script>
 </body>
 </html>

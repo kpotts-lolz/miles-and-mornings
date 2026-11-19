@@ -63,8 +63,9 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 
 /**
  * Fetch a CSV (local file or published Google Sheets URL) and return
- * clean rows: [{ label, km, trimp, average, start: Date|null }, …]
+ * clean rows: [{ label, km, trimp, start: Date|null }, …]
  * oldest → newest. Blank rows and any extra columns are ignored.
+ * (An "Average" column, if present, is ignored: the chart calculates its own.)
  */
 async function loadTrainingData(url = DATA_URL) {
   const res = await fetch(url, { cache: "no-store" });
@@ -84,7 +85,6 @@ async function loadTrainingData(url = DATA_URL) {
     label: find(/week|date|range/, 0),
     km: find(/km|dist/, 1),
     trimp: find(/trimp|load/, 2),
-    average: find(/avg|average/, 3),
   };
   const hasHeader = isNaN(toNumber(table[0][col.km]));
   const body = hasHeader ? table.slice(1) : table;
@@ -94,7 +94,6 @@ async function loadTrainingData(url = DATA_URL) {
       label: (r[col.label] || "").trim(),
       km: toNumber(r[col.km]),
       trimp: toNumber(r[col.trimp]),
-      average: toNumber(r[col.average]),
     }))
     .filter((r) => r.label && Number.isFinite(r.km));
 
@@ -158,7 +157,7 @@ function attachDates(rows) {
    Formatting helpers
    ============================================================ */
 
-const fmtKm = (n) => (Math.round(n * 10) / 10).toFixed(1).replace(/\.0$/, "");
+const fmtKm = (n) => (Math.round((n + Number.EPSILON) * 10) / 10).toFixed(1).replace(/\.0$/, "");
 
 function prettyRange(row) {
   if (!row.start) return row.label;
@@ -198,8 +197,7 @@ function renderHero(rows) {
 
   // Last 4 weeks as a mini bar strip (oldest → this week).
   const last4 = rows.slice(-4);
-  const prev4 = rows.slice(-8, -4);
-  const max = Math.max(...rows.slice(-8).map((r) => r.km), 1);
+  const max = Math.max(...last4.map((r) => r.km), 1);
   const bars = document.getElementById("trend-bars");
   bars.innerHTML = "";
   last4.forEach((r, i) => {
@@ -212,19 +210,10 @@ function renderHero(rows) {
     bars.appendChild(b);
   });
 
-  const avg = (a) => a.reduce((s, r) => s + r.km, 0) / (a.length || 1);
-  const a4 = avg(last4);
-  let line = `<strong>${fmtKm(a4)} km</strong> a week over the last 4 weeks`;
-  if (prev4.length === 4 && avg(prev4) > 0) {
-    const pct = Math.round(((a4 - avg(prev4)) / avg(prev4)) * 100);
-    const cls = pct > 2 ? "up" : pct < -2 ? "down" : "flat";
-    const arrow = pct > 2 ? "▲" : pct < -2 ? "▼" : "●";
-    const word = cls === "flat" ? "steady" : `${Math.abs(pct)}%`;
-    line += ` <span class="delta delta--${cls}">${arrow} ${word}</span> vs the 4 before.`;
-  } else {
-    line += ".";
-  }
-  document.getElementById("trend-text").innerHTML = line;
+  // Just the recent shape of things. No "vs before" scoring; weeks are allowed to be what they are.
+  const a4 = last4.reduce((s, r) => s + r.km, 0) / (last4.length || 1);
+  document.getElementById("trend-text").innerHTML =
+    `<strong>${fmtKm(a4)} km</strong> a week over the last 4 weeks.`;
 }
 
 function countUp(el, target) {
@@ -247,7 +236,9 @@ function setChartDefaults() {
   Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
   Chart.defaults.font.size = 12;
   Chart.defaults.color = INK_SOFT;
-  Chart.defaults.animation = reduceMotion ? false : { duration: 700, easing: "easeOutQuart" };
+  // Adjust the defaults; don't replace the object. Chart.js reads other keys
+  // from it (like how to animate colours), and losing them freezes every chart.
+  Object.assign(Chart.defaults.animation, { duration: reduceMotion ? 0 : 700, easing: "easeOutQuart" });
   Object.assign(Chart.defaults.plugins.tooltip, {
     backgroundColor: "#FBF6EE",
     titleColor: INK,
@@ -257,6 +248,7 @@ function setChartDefaults() {
     padding: 12,
     cornerRadius: 12,
     displayColors: false,
+    itemSort: (a, b) => a.datasetIndex - b.datasetIndex, // the week's km first, then the average
     titleFont: { weight: "600" },
   });
 }
@@ -330,6 +322,9 @@ function renderCharts(all, range) {
   const narrow = window.innerWidth < 760;
   const radius = rows.length > 40 ? 4 : narrow ? 6 : 10;
 
+  // Average of exactly the weeks on screen, so it changes with 12w / 26w / All.
+  const avgKm = rows.reduce((s, r) => s + r.km, 0) / (rows.length || 1);
+
   /* ---- Distance ---- */
   const distData = {
     labels: rows.map((r) => r.label),
@@ -351,7 +346,7 @@ function renderCharts(all, range) {
       {
         type: "line",
         label: "Average",
-        data: rows.map((r) => r.average),
+        data: rows.map(() => avgKm),
         borderColor: "#6F8BA6",
         borderWidth: 2,
         borderDash: [6, 5],
@@ -473,49 +468,128 @@ function renderCollage() {
 
 function showError(err) {
   console.error(err);
+  clearError();
   document.querySelector(".wall").insertAdjacentHTML(
     "afterbegin",
-    `<div class="error" role="alert"><strong>Couldn't load your weeks.</strong><br>${err.message}.<br>
-     If you opened this file directly, serve the folder instead: <code>python3 -m http.server</code></div>`
+    `<div class="error" role="alert"><strong>Couldn't load your weeks.</strong><br>${esc(err.message)}.<br>
+     If you opened this file directly, serve the folder instead: <code>ruby -run -e httpd . -p 8000</code></div>`
   );
   document.getElementById("trend-text").textContent = "No data yet.";
+}
+
+function clearError() {
+  document.querySelectorAll(".wall > .error").forEach((e) => e.remove());
+}
+
+let allRows = [];   // what the page is showing now
+let csvRows = null; // weekly.csv, kept so "Disconnect" can fall back to it
+let range = "26";
+
+/** Draw everything that depends on the weekly rows. */
+function renderAll(rows, sourceNote) {
+  allRows = rows;
+  clearError();
+  renderHero(rows);
+  renderCharts(rows, range);
+  const first = rows[0];
+  document.getElementById("foot-text").textContent =
+    `${rows.length} weeks logged since ${first.start ? `${MONTHS[first.start.getMonth()]} ${first.start.getFullYear()}` : first.label}` +
+    (sourceNote ? ` · ${sourceNote}` : "");
+}
+
+function setupChartControls() {
+  const buttons = document.querySelectorAll(".range button");
+  const pick = (r) => {
+    range = r;
+    buttons.forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.range === r)));
+    if (allRows.length) renderCharts(allRows, r);
+  };
+  buttons.forEach((b) => b.addEventListener("click", () => pick(b.dataset.range)));
+
+  // Bar corner radius depends on width; redraw when crossing the breakpoint.
+  let wasNarrow = window.innerWidth < 760;
+  window.addEventListener("resize", () => {
+    const isNarrow = window.innerWidth < 760;
+    if (isNarrow !== wasNarrow && allRows.length) { wasNarrow = isNarrow; renderCharts(allRows, range); }
+  });
+}
+
+/* ---------- live training log (private Google Sheet) ---------- */
+
+function setSource(state, text) {
+  const bar = document.getElementById("source");
+  bar.hidden = false;
+  bar.dataset.state = state; // csv | loading | live | error
+  document.getElementById("source-text").textContent = text;
+  document.getElementById("source-connect").hidden = !(state === "csv" || state === "error");
+  document.getElementById("source-refresh").hidden = state !== "live";
+  document.getElementById("source-disconnect").hidden = state !== "live";
+}
+
+async function goLive() {
+  setSource("loading", "Reading your training log…");
+  try {
+    const { title, weeks } = await SheetSource.load();
+    if (!weeks.length) throw new Error("Connected, but found no weeks with km logged yet.");
+    renderAll(weeks, "live from your training log");
+    const t = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    setSource("live", `Live from “${title}” · ${t}`);
+  } catch (err) {
+    console.error(err);
+    if (!SheetSource.signedIn || err.needsSignIn) {
+      setSource("error", `${err.message} Showing weekly.csv for now.`);
+    } else {
+      setSource("error", err.message);
+    }
+  }
+}
+
+async function setupSheetSource() {
+  if (typeof SheetSource === "undefined" || !(await SheetSource.available())) return; // public site: CSV only
+
+  document.getElementById("source-connect").addEventListener("click", async () => {
+    setSource("loading", "Waiting for Google sign-in…");
+    try {
+      await SheetSource.signIn();
+      await goLive();
+    } catch (err) {
+      setSource("error", err.message);
+    }
+  });
+  document.getElementById("source-refresh").addEventListener("click", goLive);
+  document.getElementById("source-disconnect").addEventListener("click", () => {
+    SheetSource.signOut();
+    if (csvRows) renderAll(csvRows);
+    setSource("csv", "Disconnected. Showing weekly.csv.");
+  });
+
+  if (SheetSource.restore()) {
+    await goLive();
+  } else {
+    setSource("csv", "Showing weekly.csv");
+  }
 }
 
 async function init() {
   renderGoals();
   renderRaces();
   renderCollage();
+  if (typeof Chart === "undefined") {
+    showError(new Error("Chart.js didn't load (are you offline?)"));
+    return;
+  }
+  setChartDefaults();
+  setupChartControls();
+
   try {
-    if (typeof Chart === "undefined") throw new Error("Chart.js didn't load (are you offline?)");
-    const rows = await loadTrainingData();
-    if (!rows.length) throw new Error("The CSV had no usable rows");
-
-    setChartDefaults();
-    renderHero(rows);
-
-    let range = "26";
-    const buttons = document.querySelectorAll(".range button");
-    const pick = (r) => {
-      range = r;
-      buttons.forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.range === r)));
-      renderCharts(rows, r);
-    };
-    buttons.forEach((b) => b.addEventListener("click", () => pick(b.dataset.range)));
-    pick(range);
-
-    // Bar corner radius depends on width; redraw when crossing the breakpoint.
-    let wasNarrow = window.innerWidth < 760;
-    window.addEventListener("resize", () => {
-      const isNarrow = window.innerWidth < 760;
-      if (isNarrow !== wasNarrow) { wasNarrow = isNarrow; renderCharts(rows, range); }
-    });
-
-    const first = rows[0];
-    document.getElementById("foot-text").textContent =
-      `${rows.length} weeks logged since ${first.start ? `${MONTHS[first.start.getMonth()]} ${first.start.getFullYear()}` : first.label}`;
+    csvRows = await loadTrainingData();
+    if (!csvRows.length) throw new Error("The CSV had no usable rows");
+    renderAll(csvRows);
   } catch (err) {
     showError(err);
   }
+
+  await setupSheetSource();
 }
 
 // Wait for web fonts so canvas labels render in DM Sans, not a fallback.

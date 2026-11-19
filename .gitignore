@@ -1,0 +1,14 @@
+# config.js is intentionally NOT ignored any more: the hosted site needs it for
+# Google sign-in. It only holds the OAuth client ID (public by design: it only
+# works from origins you authorize) and the spreadsheet ID (useless without
+# being shared the sheet). No secrets belong in it.
+
+# Upload staging folder made by make-upload.sh
+_upload/
+
+# Full-size photo originals and design references (not part of the site)
+slider-photos/
+reference/
+
+# macOS
+.DS_Store

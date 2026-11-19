@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sheet Connection Test</title>
+  <style>
+    :root {
+      --bg: #F3EADB; --paper: #FBF6EE; --edge: #EADFCB;
+      --ink: #2F2A24; --soft: #6E6458;
+      --ok-bg: #E4EAD6; --ok-ink: #3D4A26;
+      --err-bg: #FBE3D8; --err-ink: #7A3418;
+      --warn-bg: #FBEFD2; --warn-ink: #6B4A0E;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 32px 16px 64px;
+      background: var(--bg); color: var(--ink);
+      font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    main { max-width: 1100px; margin: 0 auto; }
+    h1 { margin: 0 0 4px; font-size: 1.6rem; }
+    .sub { margin: 0 0 24px; color: var(--soft); }
+    .card {
+      background: var(--paper); border: 1px solid var(--edge);
+      border-radius: 16px; padding: 20px; margin-bottom: 20px;
+    }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    button {
+      font: 600 0.95rem/1 inherit; font-family: inherit;
+      padding: 12px 18px; border-radius: 999px; cursor: pointer;
+      border: 1px solid var(--ink); background: var(--ink); color: var(--paper);
+    }
+    button.secondary { background: transparent; color: var(--ink); }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    .msg { margin: 16px 0 0; padding: 12px 14px; border-radius: 10px; }
+    .msg:empty { display: none; }
+    .msg.info { background: var(--edge); color: var(--ink); }
+    .msg.ok   { background: var(--ok-bg); color: var(--ok-ink); }
+    .msg.err  { background: var(--err-bg); color: var(--err-ink); }
+    .msg.warn { background: var(--warn-bg); color: var(--warn-ink); }
+    .msg strong { display: block; margin-bottom: 2px; }
+    dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0; font-size: 0.9rem; }
+    dt { color: var(--soft); }
+    dd { margin: 0; word-break: break-all; font-family: ui-monospace, Menlo, monospace; font-size: 0.85rem; }
+    .table-wrap { overflow-x: auto; }
+    table { border-collapse: collapse; font-size: 0.85rem; white-space: nowrap; }
+    th, td { border: 1px solid var(--edge); padding: 6px 10px; text-align: left; vertical-align: top; }
+    thead th { background: var(--bg); position: sticky; top: 0; }
+    td.rownum, th.rownum { color: var(--soft); text-align: right; background: var(--bg); }
+    td.empty { color: #C8BDAE; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Sheet connection test</h1>
+  <p class="sub">Signs in with Google (read-only) and shows the first 15 raw rows of your training log.</p>
+
+  <section class="card">
+    <div class="actions">
+      <button id="signin" type="button" disabled>Sign in with Google</button>
+      <button id="reload" type="button" class="secondary" hidden>Fetch rows again</button>
+      <button id="signout" type="button" class="secondary" hidden>Sign out</button>
+    </div>
+    <div id="msg" class="msg info" role="status" aria-live="polite">Loading Google sign-in…</div>
+  </section>
+
+  <section class="card">
+    <dl>
+      <dt>Page origin</dt><dd id="cfg-origin"></dd>
+      <dt>Spreadsheet ID</dt><dd id="cfg-sheet"></dd>
+      <dt>Tab</dt><dd id="cfg-tab"></dd>
+      <dt>Scope</dt><dd>spreadsheets.readonly</dd>
+    </dl>
+  </section>
+
+  <section class="card" id="result" hidden>
+    <p id="result-title" style="margin:0 0 12px;font-weight:600"></p>
+    <div class="table-wrap"><table id="table"></table></div>
+  </section>
+</main>
+
+<script src="config.js"></script>
+<script>
+  "use strict";
+
+  const SCOPE = "https://www.googleapis.com/auth/spreadsheets.readonly";
+  const EXPECTED_ORIGIN = "http://localhost:8000";
+  const ROW_LIMIT = 15;
+
+  const $ = (id) => document.getElementById(id);
+  const cfg = window.APP_CONFIG;
+  let tokenClient = null;
+  let accessToken = null;
+
+  /* ---------- on-page messages ---------- */
+
+  function show(kind, title, detail = "") {
+    const el = $("msg");
+    el.className = `msg ${kind}`;
+    el.replaceChildren();
+    const t = document.createElement("strong");
+    t.textContent = title;
+    el.append(t);
+    if (detail) el.append(document.createTextNode(detail));
+  }
+
+  function setSignedIn(on) {
+    $("signin").hidden = on;
+    $("reload").hidden = !on;
+    $("signout").hidden = !on;
+  }
+
+  /* ---------- startup checks ---------- */
+
+  $("cfg-origin").textContent = location.origin === "null" ? location.href : location.origin;
+
+  if (!cfg || !cfg.clientId || !cfg.spreadsheetId || !cfg.tabName) {
+    show("err", "config.js is missing or incomplete.",
+      "Copy config.example.js to config.js and fill in clientId, spreadsheetId and tabName.");
+    throw new Error("Missing config");
+  }
+  $("cfg-sheet").textContent = cfg.spreadsheetId;
+  $("cfg-tab").textContent = cfg.tabName;
+
+  const wrongOrigin = location.origin !== EXPECTED_ORIGIN;
+
+  /* ---------- Google Identity Services (token model) ---------- */
+
+  function initGoogle() {
+    tokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: cfg.clientId,
+      scope: SCOPE,
+      callback: onToken,
+      error_callback: onPopupError,
+    });
+    $("signin").disabled = false;
+    if (wrongOrigin) {
+      show("warn", `This page must be opened at ${EXPECTED_ORIGIN}/connection-test.html`,
+        `It's currently at ${location.origin === "null" ? "a file:// path" : location.origin}. ` +
+        "Google only allows sign-in from the origin you authorized, so sign-in will fail here " +
+        "(Google shows an \"origin_mismatch\" error in its popup). Note that 127.0.0.1 doesn't count as localhost.");
+    } else {
+      show("info", "Ready.", "Click \"Sign in with Google\" and approve read-only access to your sheets.");
+    }
+  }
+
+  // Popup closed, blocked, or otherwise never returned a response.
+  function onPopupError(err) {
+    const type = err && err.type;
+    if (type === "popup_closed") {
+      show("warn", "Sign-in cancelled.", "The Google window was closed before you finished. Click the button to try again.");
+    } else if (type === "popup_failed_to_open") {
+      show("err", "The Google sign-in window couldn't open.", "Your browser blocked the popup. Allow popups for localhost:8000 and try again.");
+    } else {
+      show("err", "Sign-in didn't complete.", `Google reported: ${type || "unknown error"}.`);
+    }
+  }
+
+  // Google returned a response: either a token or an error such as access_denied.
+  function onToken(resp) {
+    if (resp.error) {
+      if (resp.error === "access_denied") {
+        show("err", "Access denied.", "You declined the permission request, so the page can't read the sheet. Sign in again and click Allow/Continue.");
+      } else {
+        show("err", "Google sign-in returned an error.", `${resp.error}${resp.error_description ? ": " + resp.error_description : ""}`);
+      }
+      return;
+    }
+    // With granular consent the user can approve sign-in but untick the Sheets box.
+    if (!google.accounts.oauth2.hasGrantedAllScopes(resp, SCOPE)) {
+      show("err", "Access denied.", "You signed in but didn't tick \"See all your Google Sheets spreadsheets\". Sign in again and leave that box checked.");
+      return;
+    }
+    accessToken = resp.access_token;
+    setSignedIn(true);
+    fetchRows();
+  }
+
+  /* ---------- Sheets API ---------- */
+
+  async function sheetsGet(path) {
+    const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${path}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    let body = null;
+    try { body = await res.json(); } catch (_) { /* non-JSON error page */ }
+    return { ok: res.ok, status: res.status, body };
+  }
+
+  function explainApiError(r, step) {
+    const e = (r.body && r.body.error) || {};
+    const msg = e.message || `HTTP ${r.status}`;
+    const reason = JSON.stringify(e.details || "");
+
+    if (r.status === 401) {
+      return ["Your sign-in expired.", "Access tokens last about an hour. Sign in again."];
+    }
+    if (r.status === 404) {
+      return ["Spreadsheet not found. Check the spreadsheet ID.",
+        `Google couldn't find a spreadsheet with ID "${cfg.spreadsheetId}". Copy the long ID from the sheet's URL ` +
+        "(between /d/ and /edit) into config.js."];
+    }
+    if (r.status === 403 && /SERVICE_DISABLED|has not been used|is disabled/i.test(msg + reason)) {
+      return ["The Google Sheets API isn't enabled for this project.", msg];
+    }
+    if (r.status === 403) {
+      return ["Access denied by Google Sheets.",
+        "You're signed in, but this Google account can't open that spreadsheet. Make sure you signed in with the " +
+        "account your coach shared the sheet with, and that the ID is right. " + `(${msg})`];
+    }
+    if (r.status === 400 && step === "values" && /parse range/i.test(msg)) {
+      return ["Tab not found. Check the tab name.", `There's no tab called "${cfg.tabName}". ${msg}`];
+    }
+    return [`Google Sheets returned an error (${r.status}).`, msg];
+  }
+
+  async function fetchRows() {
+    $("result").hidden = true;
+    show("info", "Signed in. Reading your sheet…");
+    try {
+      // 1) Spreadsheet metadata: confirms the ID and lists the real tab names.
+      const meta = await sheetsGet(`${encodeURIComponent(cfg.spreadsheetId)}?fields=properties.title,sheets.properties.title`);
+      if (!meta.ok) { show("err", ...explainApiError(meta, "meta")); return; }
+
+      const tabs = (meta.body.sheets || []).map((s) => s.properties.title);
+      if (!tabs.includes(cfg.tabName)) {
+        const close = tabs.find((t) => t.trim().toLowerCase() === cfg.tabName.trim().toLowerCase());
+        show("err", "Tab not found. Check the tab name.",
+          `"${meta.body.properties.title}" has no tab called "${cfg.tabName}". ` +
+          (close ? `Did you mean "${close}"? (Tab names are case- and space-sensitive.) ` : "") +
+          `Tabs in this spreadsheet: ${tabs.map((t) => `"${t}"`).join(", ")}.`);
+        return;
+      }
+
+      // 2) First N rows of the tab, raw (formatted as shown in the sheet).
+      const range = `'${cfg.tabName.replace(/'/g, "''")}'!1:${ROW_LIMIT}`;
+      const vals = await sheetsGet(`${encodeURIComponent(cfg.spreadsheetId)}/values/${encodeURIComponent(range)}?majorDimension=ROWS`);
+      if (!vals.ok) { show("err", ...explainApiError(vals, "values")); return; }
+
+      const rows = vals.body.values || [];
+      renderTable(rows);
+      show("ok", "Connected.",
+        `Read ${rows.length} row${rows.length === 1 ? "" : "s"} from "${cfg.tabName}" in "${meta.body.properties.title}". The sheet is still private.`);
+    } catch (err) {
+      show("err", "Couldn't reach Google Sheets.", `Check your internet connection. (${err.message})`);
+    }
+  }
+
+  function renderTable(rows) {
+    const width = rows.reduce((m, r) => Math.max(m, r.length), 0);
+    const table = $("table");
+    table.replaceChildren();
+
+    const thead = table.createTHead().insertRow();
+    const corner = document.createElement("th");
+    corner.className = "rownum";
+    corner.textContent = "#";
+    thead.append(corner);
+    for (let c = 0; c < width; c++) {
+      const th = document.createElement("th");
+      th.textContent = columnLetter(c);
+      thead.append(th);
+    }
+
+    const tbody = table.createTBody();
+    rows.forEach((row, i) => {
+      const tr = tbody.insertRow();
+      const n = tr.insertCell();
+      n.className = "rownum";
+      n.textContent = i + 1;
+      for (let c = 0; c < width; c++) {
+        const td = tr.insertCell();
+        const v = row[c];
+        if (v === undefined || v === "") { td.className = "empty"; td.textContent = "·"; }
+        else td.textContent = v; // textContent: sheet data is never treated as HTML
+      }
+    });
+
+    $("result-title").textContent = `First ${rows.length} rows of ${cfg.tabName} (raw, unparsed)`;
+    $("result").hidden = false;
+  }
+
+  function columnLetter(i) {
+    let s = "";
+    for (i += 1; i > 0; i = Math.floor((i - 1) / 26)) s = String.fromCharCode(65 + ((i - 1) % 26)) + s;
+    return s;
+  }
+
+  /* ---------- buttons ---------- */
+
+  $("signin").addEventListener("click", () => {
+    show("info", "Waiting for Google…", "Finish signing in in the popup window.");
+    tokenClient.requestAccessToken({ prompt: "" });
+  });
+
+  $("reload").addEventListener("click", fetchRows);
+
+  $("signout").addEventListener("click", () => {
+    const t = accessToken;
+    accessToken = null;
+    setSignedIn(false);
+    $("result").hidden = true;
+    if (t) google.accounts.oauth2.revoke(t, () => {});
+    show("info", "Signed out.", "Access was revoked. The page can no longer read your sheet until you sign in again.");
+  });
+
+  /* ---------- load GIS ---------- */
+
+  const gis = document.createElement("script");
+  gis.src = "https://accounts.google.com/gsi/client";
+  gis.async = true;
+  gis.onload = initGoogle;
+  gis.onerror = () => show("err", "Couldn't load Google sign-in.",
+    "The Google Identity Services script didn't load. Check your connection or any content blocker.");
+  document.head.append(gis);
+</script>
+</body>
+</html>
