@@ -693,3 +693,497 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .trend-bar { animation: none; }
 }
+
+/* ============================================================
+   Individual runs
+   ============================================================ */
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---------- Week buttons laid over the distance bars ---------- */
+
+.bar-hits {
+  position: absolute;
+  inset: 0;
+  pointer-events: none; /* only the buttons themselves take taps */
+}
+
+.bar-hit {
+  position: absolute;
+  pointer-events: auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.bar-hit:focus { outline: none; }
+.bar-hit:focus-visible {
+  outline: 2px solid var(--slate);
+  outline-offset: -2px;
+  background: rgba(111, 139, 166, 0.08);
+}
+
+/* ---------- The week's runs, under the chart ---------- */
+
+.runs {
+  margin: 18px -6px 0;
+  padding: 16px 14px 10px;
+  border-radius: var(--radius-md);
+  background: var(--ceramic);
+  border: 1.5px dashed var(--paper-edge);
+  animation: runs-in 260ms ease-out;
+}
+.runs[hidden] { display: none; }
+
+@keyframes runs-in {
+  from { opacity: 0; transform: translateY(-6px); }
+}
+
+.runs-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.runs-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 1.2rem;
+  line-height: 1.15;
+}
+.runs-title:focus { outline: none; }
+.runs-title-meta {
+  font-family: var(--font-body);
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.runs-close,
+.run-sheet-x {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--paper);
+  color: var(--ink);
+  font: 400 1.5rem/1 var(--font-body);
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(84, 60, 30, 0.14);
+}
+.runs-close:hover,
+.run-sheet-x:hover { background: var(--paper-edge); }
+
+.runs-empty {
+  margin: 6px 2px 10px;
+  color: var(--ink-soft);
+  font-size: 0.95rem;
+}
+
+.runs-connect {
+  margin: 0 0 10px 2px;
+  font: 600 0.85rem/1 var(--font-body);
+  padding: 11px 16px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--burnt);
+  color: var(--paper);
+  cursor: pointer;
+}
+.runs-connect:hover { background: #C4572C; }
+
+.run-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.run-list li + li { border-top: 1.5px dashed var(--paper-edge); }
+
+.run-row {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 64px;
+  padding: 10px 6px;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 140ms ease;
+}
+.run-row:hover,
+.run-row:active { background: rgba(251, 246, 238, 0.8); }
+
+/* the little date stamp, like a ticket stub */
+.run-stamp {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--accent) 28%, var(--paper));
+  color: color-mix(in srgb, var(--accent) 45%, var(--ink));
+  line-height: 1;
+}
+.run-stamp-day {
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.run-stamp-date {
+  margin-top: 3px;
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+}
+
+.run-main { min-width: 0; display: grid; gap: 2px; }
+.run-name {
+  font-weight: 600;
+  line-height: 1.3;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+.run-meta {
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Tags ---------- */
+
+.tag {
+  display: inline-block;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  white-space: nowrap;
+}
+.tag--race     { background: var(--burnt); color: var(--paper); }
+.tag--long     { background: #DCE3EA; color: #3F5568; }
+.tag--workout  { background: #F6E1B3; color: #74561A; }
+.tag--recovery { background: #E2E6D2; color: var(--moss); }
+
+/* ---------- RPE scale ---------- */
+
+.rpe { --rpe-pos: 0.5; }
+
+.rpe-label {
+  margin: 0 0 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.rpe-num { color: var(--ink); letter-spacing: 0.04em; }
+
+.rpe-track {
+  position: relative;
+  --inset: 16px; /* 1 and 10 sit this far in, so the thumb never hangs off the ends */
+  height: 14px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--olive) 0%, var(--mustard) 50%, var(--burnt) 100%);
+  box-shadow: inset 0 1px 2px rgba(47, 42, 36, 0.18);
+}
+
+.rpe-ticks {
+  position: absolute;
+  inset: 0 calc(var(--inset) - 1.5px);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.rpe-ticks i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: rgba(251, 246, 238, 0.85);
+}
+
+.rpe-thumb {
+  position: absolute;
+  top: 50%;
+  left: calc(var(--inset) + var(--rpe-pos) * (100% - 2 * var(--inset)));
+  transform: translate(-50%, -50%);
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--paper);
+  border: 2.5px solid var(--ink);
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  line-height: 1;
+  color: var(--ink);
+  box-shadow: 0 3px 8px -2px rgba(47, 42, 36, 0.35);
+  pointer-events: none;
+}
+
+/* Editable mode: a native slider sits over the track, invisible but focusable */
+.rpe-input {
+  position: absolute;
+  inset: -12px 0;
+  width: 100%;
+  height: calc(100% + 24px);
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.rpe:has(.rpe-input:focus-visible) .rpe-thumb { outline: 3px solid var(--slate); outline-offset: 2px; }
+
+.rpe-ends {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 12px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--ink-soft);
+}
+
+.rpe-empty {
+  margin: 0;
+  color: var(--ink-faint);
+  font-size: 0.92rem;
+}
+
+/* ---------- Run pop-out: bottom sheet on phones ---------- */
+
+html:has(.run-sheet[open]) { overflow: hidden; }
+
+.run-sheet {
+  position: fixed;
+  inset: auto 0 0 0;
+  width: 100%;
+  max-width: 100%;
+  max-height: 90vh;
+  max-height: 90dvh;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 0 -20px 50px -20px rgba(47, 42, 36, 0.45);
+  overflow: hidden;
+}
+.run-sheet[open] { display: flex; animation: sheet-up 320ms cubic-bezier(0.2, 0.9, 0.3, 1); }
+.run-sheet::backdrop {
+  background: rgba(47, 42, 36, 0.5);
+  backdrop-filter: blur(3px);
+}
+
+@keyframes sheet-up {
+  from { transform: translateY(40%); opacity: 0; }
+}
+
+.run-sheet-inner {
+  position: relative;
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 14px 20px calc(18px + env(safe-area-inset-bottom));
+}
+
+/* the page's film grain, repeated inside the sheet (dialogs sit above the page grain) */
+.sheet-grain {
+  position: absolute;
+  inset: 0;
+  min-height: 100%;
+  pointer-events: none;
+  opacity: 0.12;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.25  0 0 0 0 0.2  0 0 0 0 0.15  0 0 0 0.55 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  background-size: 220px 220px;
+}
+
+.run-sheet-handle {
+  display: block;
+  width: 44px;
+  height: 5px;
+  margin: 0 auto 6px;
+  border-radius: 999px;
+  background: var(--paper-edge);
+}
+
+.run-sheet-x {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  background: var(--ceramic);
+  box-shadow: none;
+}
+
+.run-when {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 18px 52px 10px 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.run-when .tag { letter-spacing: 0.04em; text-transform: none; font-size: 0.75rem; }
+
+.run-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 1.8rem;
+  line-height: 1.05;
+  overflow-wrap: anywhere;
+}
+
+.run-desc {
+  margin: 10px 0 0;
+  color: var(--ink-soft);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.run-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 20px 0 22px;
+}
+.run-stat {
+  padding: 12px 10px 10px;
+  border-radius: var(--radius-md);
+  background: var(--ceramic);
+  text-align: center;
+}
+.run-stat dt {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.run-stat dd {
+  margin: 4px 0 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.05rem, 5.4vw, 1.35rem);
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.run-stat-none { color: var(--ink-faint); }
+
+.run-rpe {
+  padding: 16px 14px 14px;
+  border-radius: var(--radius-md);
+  border: 1.5px dashed var(--paper-edge);
+}
+
+.run-notes { margin-top: 18px; }
+.run-notes-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.lock { flex: none; color: var(--ink-soft); }
+.run-notes-text {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: #F7EFE1;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.run-notes-text--none { background: transparent; padding: 0; color: var(--ink-faint); }
+
+.run-sheet-foot { margin-top: 22px; }
+.run-sheet-done {
+  width: 100%;
+  min-height: 52px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--paper);
+  font: 600 1rem/1 var(--font-body);
+  cursor: pointer;
+}
+.run-sheet-done:hover { background: #48413A; }
+
+.run-row:focus-visible,
+.runs-close:focus-visible,
+.runs-connect:focus-visible,
+.run-sheet-x:focus-visible,
+.run-sheet-done:focus-visible { outline: 3px solid var(--slate); outline-offset: 2px; }
+
+/* Wider screens: a centred card instead of a bottom sheet */
+@media (min-width: 760px) {
+  .runs { margin-inline: 0; padding: 18px 18px 12px; }
+
+  .run-sheet {
+    inset: 0;
+    margin: auto;
+    width: min(92vw, 520px);
+    max-height: 86vh;
+    border-radius: var(--radius-lg);
+    box-shadow: 0 30px 60px -20px rgba(47, 42, 36, 0.5);
+  }
+  .run-sheet[open] { animation-name: sheet-pop; }
+  .run-sheet-inner { padding: 22px 28px 24px; }
+  .run-sheet-handle { display: none; }
+  .run-sheet-x { top: 18px; right: 18px; }
+  .run-when { margin-top: 4px; }
+  .run-title { font-size: 2.1rem; }
+}
+
+@keyframes sheet-pop {
+  from { transform: translateY(12px) scale(0.98); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .runs,
+  .run-sheet[open] { animation: none; }
+}
+
+/* Editable RPE: give the hidden native thumb the visible thumb's size, so taps and drags line up */
+.rpe-input { -webkit-appearance: none; appearance: none; background: transparent; }
+.rpe-input::-webkit-slider-thumb { -webkit-appearance: none; width: 32px; height: 32px; }
+.rpe-input::-moz-range-thumb { width: 32px; height: 32px; border: 0; }

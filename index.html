@@ -20,7 +20,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Bagel+Fat+One&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet" />
 
-  <link rel="stylesheet" href="styles.css?v=12" />
+  <link rel="stylesheet" href="styles.css?v=16" />
 </head>
 <body>
   <div class="grain" aria-hidden="true"></div>
@@ -85,7 +85,19 @@
       </div>
       <div class="chart-wrap">
         <canvas id="distance-chart" role="img" aria-label="Bar chart of weekly running distance in kilometres, with an average line"></canvas>
+        <!-- One invisible button per week, laid over each bar's column (built in app.js) -->
+        <div class="bar-hits" id="bar-hits" role="group" aria-label="Weeks. Choose one to see its runs. Use the arrow keys to move between weeks."></div>
       </div>
+
+      <!-- That week's runs: opens when a bar is tapped -->
+      <div class="runs" id="runs-panel" role="region" aria-labelledby="runs-title" hidden>
+        <div class="runs-head">
+          <h3 class="runs-title" id="runs-title" tabindex="-1"></h3>
+          <button type="button" class="runs-close" id="runs-close" aria-label="Close this week's runs">×</button>
+        </div>
+        <div class="runs-body" id="runs-body"></div>
+      </div>
+      <p class="visually-hidden" id="runs-status" aria-live="polite"></p>
     </section>
 
     <!-- TRIMP -->
@@ -143,13 +155,24 @@
     <p class="lightbox-caption" id="lightbox-caption"></p>
   </dialog>
 
+  <!-- One run's details: a bottom sheet on phones, a card on wider screens (filled in by app.js) -->
+  <dialog class="run-sheet" id="run-dialog" aria-labelledby="run-title">
+    <div class="run-sheet-inner">
+      <span class="sheet-grain" aria-hidden="true"></span>
+      <span class="run-sheet-handle" aria-hidden="true"></span>
+      <form method="dialog"><button class="run-sheet-x" aria-label="Close">×</button></form>
+      <div id="run-content"></div>
+      <form method="dialog" class="run-sheet-foot"><button class="run-sheet-done">Done</button></form>
+    </div>
+  </dialog>
+
   <footer class="foot">
     <p id="foot-text"></p>
   </footer>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <!-- Bump ?v= after editing these files so browsers don't reuse old cached copies -->
-  <script src="sheets.js?v=12"></script>
-  <script src="app.js?v=12"></script>
+  <script src="sheets.js?v=16"></script>
+  <script src="app.js?v=16"></script>
 </body>
 </html>

@@ -49,6 +49,52 @@ const PHOTOS = [
   },
 ];
 
+/**
+ * RUN TAG RULES: how a run's tag is guessed from its workout description.
+ * Checked top to bottom; the first rule with a matching pattern wins.
+ * No match means no tag. When unsure, leave it untagged.
+ */
+const RUN_TAG_RULES = [
+  {
+    tag: "Race",
+    patterns: [
+      /\brace\s*:/i,                    // the coach's "Race: Navy 5k"
+      /["“]race["”]/i,                  // Parkrun 5k "race"
+      /\bparkrun\b/i,
+      /\btime[\s-]?trial\b/i,
+      /\bTT\b/,
+      /\bP[BR]\b/,
+    ],
+  },
+  {
+    tag: "Long run",
+    patterns: [
+      /\blong\s*run\b/i,
+      /\bLR\b/,
+      /^\s*(plan\s*:\s*)?(up to\s+)?(7[5-9]|[89]\d|[1-9]\d\d)\s*(-\s*\d+\s*)?('|min)/i, // starts with 75' or more: "80-90' easy"
+      /^\s*(plan\s*:\s*)?1\d(\.\d+)?\s*miles?\b/i,                                 // "10 miles easy"
+    ],
+  },
+  {
+    tag: "Workout",
+    patterns: [
+      /\b\d+\s*[x×]\s*\d/i,             // 3x1 mile, 6 × 400m
+      /\bintervals?\b/i,
+      /\btempo\b/i,
+      /\bthreshold\b/i,
+      /\bfartlek\b/i,
+      /\brepeats?\b/i,
+      /\bhill\s*(repeats?|reps|sprints)\b/i,
+      /@\s*["“]?[^,;]*\bpace\b/i,     // "@ 5-10k pace"
+      /\bprogression\b/i,
+    ],
+  },
+  {
+    tag: "Recovery",
+    patterns: [/\brecovery\s*(run|jog)\b/i, /^\s*recovery\b/i, /\bshake\s*-?\s*out\b/i],
+  },
+];
+
 /* Accent palette, in bar-rotation order (matches styles.css). */
 const PALETTE = ["#E9A9BC", "#D9673A", "#E2AE3C", "#8C8A3A", "#4F5E36", "#6F8BA6"];
 const INK = "#2F2A24";
@@ -366,12 +412,9 @@ function renderDistance(all, range) {
         type: "bar",
         label: "Distance",
         data: rows.map((r) => r.km),
-        backgroundColor: colors,
-        hoverBackgroundColor: colors.map((c) => withAlpha(c, 0.8)),
+        ...barStyles(colors, lastIdx, rows.findIndex(isSelected)),
         borderRadius: radius,
         borderSkipped: false,
-        borderColor: rows.map((_, i) => (i === lastIdx ? INK : "transparent")),
-        borderWidth: rows.map((_, i) => (i === lastIdx ? 2 : 0)),
         categoryPercentage: 0.86,
         barPercentage: 0.9,
         order: 2,
@@ -395,13 +438,167 @@ function renderDistance(all, range) {
   distOpts.plugins.tooltip.callbacks.label = (ctx) =>
     ctx.datasetIndex === 0 ? `${fmtKm(ctx.parsed.y)} km` : `average ${fmtKm(ctx.parsed.y)} km`;
 
+  distanceView = { rows, colors, lastIdx };
+  // If the open week isn't in this range any more, close its panel.
+  if (selectedWeek !== null && !rows.some(isSelected)) closeRunsPanel({ returnFocus: false, redraw: false });
+
   if (distanceChart) distanceChart.destroy();
+  buildBarHits(rows);
   distanceChart = new Chart(document.getElementById("distance-chart"), {
     data: distData,
     options: distOpts,
-    plugins: [avgLabelPlugin],
+    plugins: [avgLabelPlugin, barHitsPlugin],
   });
+}
 
+/** Bar colours and outlines. With a week selected, the others fade back. */
+function barStyles(colors, lastIdx, selIdx) {
+  const picked = selIdx !== -1;
+  return {
+    backgroundColor: colors.map((c, i) => (!picked || i === selIdx ? c : withAlpha(c, 0.35))),
+    hoverBackgroundColor: colors.map((c, i) => (i === selIdx ? c : withAlpha(c, picked ? 0.6 : 0.8))),
+    // This week keeps its thin outline, unless another week is selected (then only that one is outlined).
+    borderColor: colors.map((_, i) => (i === selIdx || (!picked && i === lastIdx) ? INK : "transparent")),
+    borderWidth: colors.map((_, i) => (i === selIdx ? 3 : !picked && i === lastIdx ? 2 : 0)),
+  };
+}
+
+function restyleBars() {
+  if (!distanceChart || !distanceView) return;
+  const { rows, colors, lastIdx } = distanceView;
+  Object.assign(distanceChart.data.datasets[0], barStyles(colors, lastIdx, rows.findIndex(isSelected)));
+  distanceChart.update();
+}
+
+/* ============================================================
+   Week buttons over the distance bars
+   ============================================================ */
+
+let distanceView = null;   // { rows, colors, lastIdx } currently drawn
+let selectedWeek = null;   // key of the week whose runs are open, or null
+const weekKey = (r) => (r.start ? r.start.getTime() : r.label);
+const isSelected = (r) => selectedWeek !== null && weekKey(r) === selectedWeek;
+
+/** Keeps each week button lined up with its bar's full column (bar + gap + label). */
+const barHitsPlugin = {
+  id: "barHits",
+  afterUpdate(chart) {
+    const wrap = document.getElementById("bar-hits");
+    const btns = wrap.children;
+    const x = chart.scales.x;
+    const n = btns.length;
+    if (!x || !n) return;
+    const { top } = chart.chartArea;
+    const colW = (x.right - x.left) / n;
+    const canvas = chart.canvas;
+    for (let i = 0; i < n; i++) {
+      const s = btns[i].style;
+      s.left = `${canvas.offsetLeft + x.getPixelForValue(i) - colW / 2}px`;
+      s.width = `${colW}px`;
+      s.top = `${canvas.offsetTop + top}px`;
+      s.height = `${chart.height - top}px`;
+    }
+  },
+};
+
+function buildBarHits(rows) {
+  const wrap = document.getElementById("bar-hits");
+  const selIdx = rows.findIndex(isSelected);
+  const focusIdx = selIdx !== -1 ? selIdx : rows.length - 1; // one Tab stop: the open week, else this week
+  wrap.innerHTML = rows.map((r, i) => `
+    <button type="button" class="bar-hit" data-i="${i}" tabindex="${i === focusIdx ? 0 : -1}"
+      aria-controls="runs-panel" aria-expanded="${i === selIdx}"
+      aria-label="Week of ${esc(prettyRange(r))}, ${fmtKm(r.km)} km${i === rows.length - 1 ? ", this week" : ""}"></button>`
+  ).join("");
+}
+
+function syncBarHits() {
+  if (!distanceView) return;
+  const selIdx = distanceView.rows.findIndex(isSelected);
+  const btns = [...document.querySelectorAll("#bar-hits .bar-hit")];
+  const focusIdx = selIdx !== -1 ? selIdx : btns.length - 1;
+  btns.forEach((b, i) => {
+    b.setAttribute("aria-expanded", String(i === selIdx));
+    b.tabIndex = i === focusIdx ? 0 : -1;
+  });
+}
+
+/** Show (or clear) the chart's own tooltip for a week, for hover and keyboard focus. */
+function showBarTip(i) {
+  const c = distanceChart;
+  if (!c) return;
+  const els = i === null ? [] : [{ datasetIndex: 0, index: i }, { datasetIndex: 1, index: i }];
+  c.setActiveElements(els);
+  c.tooltip.setActiveElements(els, { x: 0, y: 0 });
+  c.update();
+}
+
+function setupBarHits() {
+  const wrap = document.getElementById("bar-hits");
+  const idx = (el) => Number(el.closest(".bar-hit").dataset.i);
+
+  wrap.addEventListener("click", (e) => {
+    const b = e.target.closest(".bar-hit");
+    if (b) toggleWeek(idx(b));
+  });
+  wrap.addEventListener("pointerover", (e) => {
+    if (e.pointerType === "mouse" && e.target.closest(".bar-hit")) showBarTip(idx(e.target));
+  });
+  wrap.addEventListener("pointerleave", (e) => { if (e.pointerType === "mouse") showBarTip(null); });
+  wrap.addEventListener("focusin", (e) => {
+    const b = e.target.closest(".bar-hit");
+    if (b && b.matches(":focus-visible")) showBarTip(idx(b));
+  });
+  wrap.addEventListener("focusout", (e) => { if (!wrap.contains(e.relatedTarget)) showBarTip(null); });
+
+  // Arrow keys move between weeks (one Tab stop for the whole chart).
+  wrap.addEventListener("keydown", (e) => {
+    const btns = [...wrap.querySelectorAll(".bar-hit")];
+    const i = btns.indexOf(document.activeElement);
+    if (i === -1) return;
+    const to =
+      e.key === "ArrowRight" || e.key === "ArrowDown" ? Math.min(btns.length - 1, i + 1)
+      : e.key === "ArrowLeft" || e.key === "ArrowUp" ? Math.max(0, i - 1)
+      : e.key === "Home" ? 0
+      : e.key === "End" ? btns.length - 1
+      : null;
+    if (to === null) return;
+    e.preventDefault();
+    btns[i].tabIndex = -1;
+    btns[to].tabIndex = 0;
+    btns[to].focus();
+  });
+}
+
+/** Tap a bar: open its week; tap it again: close; tap another: switch. */
+function toggleWeek(i) {
+  const row = distanceView && distanceView.rows[i];
+  if (!row) return;
+  if (isSelected(row)) { closeRunsPanel({ returnFocus: false }); return; }
+  selectedWeek = weekKey(row);
+  restyleBars();
+  syncBarHits();
+  renderRunsPanel({ announce: true });
+  const panel = document.getElementById("runs-panel");
+  const r = panel.getBoundingClientRect();
+  if (r.bottom > window.innerHeight) {
+    panel.scrollIntoView({ block: "nearest", behavior: reduceMotion ? "auto" : "smooth" });
+  }
+}
+
+function closeRunsPanel({ returnFocus = true, redraw = true } = {}) {
+  const key = selectedWeek;
+  selectedWeek = null;
+  document.getElementById("runs-panel").hidden = true;
+  document.getElementById("runs-status").textContent = "";
+  if (!redraw) return;
+  restyleBars();
+  syncBarHits();
+  if (returnFocus && distanceView) {
+    const i = distanceView.rows.findIndex((r) => weekKey(r) === key);
+    const b = document.querySelector(`#bar-hits .bar-hit[data-i="${i}"]`);
+    if (b) b.focus();
+  }
 }
 
 function renderTrimp(all, range) {
@@ -437,6 +634,262 @@ function renderTrimp(all, range) {
 function renderCharts(all) {
   renderDistance(all, ranges.distance);
   renderTrimp(all, ranges.trimp);
+}
+
+/* ============================================================
+   Runs: helpers
+   ============================================================ */
+
+const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+/** First matching tag from RUN_TAG_RULES, or null. */
+function runTag(description) {
+  const text = description || "";
+  const rule = RUN_TAG_RULES.find((r) => r.patterns.some((p) => p.test(text)));
+  return rule ? rule.tag : null;
+}
+
+/**
+ * A short title from the workout description's first line.
+ * The coach writes "warm-up: main set/cool-down", so the title is the main set:
+ *   "15' easy + strides: Race: Navy 5k in Esquimalt/15' easy" → "Navy 5k in Esquimalt"
+ *   "10-15' easy: 5k time trial at ParkRun"                   → "5k time trial at ParkRun"
+ * Without a colon it's the first phrase (up to a comma or semicolon), skipping a warm-up:
+ *   "1.5 mile WU, 3x1 mile @ 5-10k pace, …"                   → "3x1 mile @ 5-10k pace"
+ * "plan:" and "Race:" labels are dropped. Long titles are trimmed at a word.
+ */
+const WARMUP_WORDS = /\b(easy|wu|warm[\s-]?up|strides?|drills?|dribbles?)\b/i;
+
+function runTitle(run) {
+  const firstLine = (run.description.split("\n").find((l) => l.trim()) || "").trim();
+
+  // Split on label colons ("strides: …"), not clock colons ("@5:15/km").
+  const parts = firstLine.split(/:\s+|:$/)
+    .map((p) => p.trim())
+    .filter((p) => p && !/^(plan|race|pm|am|xt)$/i.test(p));
+  let main = parts.length > 1
+    ? parts.slice(0, -1).find((p) => !WARMUP_WORDS.test(p) && !/\b(as|of)$/i.test(p)) || parts[parts.length - 1]
+    : parts[0] || "";
+  main = main.replace(/\s*\/[^/]*\b(easy|cd|cool[\s-]?down)\b[^/]*$/i, ""); // drop a trailing "/15' easy" cool-down
+
+  const phrases = main.split(/[,;]/).map((p) => p.trim()).filter(Boolean);
+  while (phrases.length > 1 && /\b(wu|warm[\s-]?up)\b/i.test(phrases[0])) phrases.shift();
+  let t = (phrases[0] || "").replace(/\s{2,}/g, " ").replace(/[.\s]+$/, "");
+  if (!t) return `${fmtKm(run.km)} km run`;
+  if (t.length > 42) t = t.slice(0, 42).replace(/\s+\S*$/, "") + "…";
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
+/** Seconds → "43:30" or "1:32:05". */
+function fmtDuration(sec) {
+  const s = Math.round(sec);
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
+  const pad = (n) => String(n).padStart(2, "0");
+  return h ? `${h}:${pad(m)}:${pad(r)}` : `${m}:${pad(r)}`;
+}
+
+const runTime = (run) => (run.minutes ? fmtDuration(run.minutes * 60) : null);
+const runPace = (run) => (run.minutes && run.km ? fmtDuration((run.minutes * 60) / run.km) : null);
+
+function effortWord(v) {
+  return v <= 3 ? "easy" : v <= 6 ? "moderate" : v <= 8 ? "hard" : "max effort";
+}
+
+/** Runs sorted Monday first, AM before PM. */
+function sortedRuns(row) {
+  return [...row.runs].sort((a, b) => a.date - b.date || (a.slot === b.slot ? 0 : a.slot === "AM" ? -1 : 1));
+}
+
+const sameDayCount = (runs, run) => runs.filter((r) => r.date.getTime() === run.date.getTime()).length;
+
+/* ============================================================
+   RPE scale: one reusable component.
+   createRpeScale({ value, readOnly, onChange, label })
+     readOnly: true  → a meter (what the run pop-out uses)
+     readOnly: false → a real slider (for the manual-entry form, next)
+   ============================================================ */
+
+let rpeIds = 0;
+
+function createRpeScale({ value = null, readOnly = true, onChange = null, label = "Effort (RPE)" } = {}) {
+  const root = document.createElement("div");
+  root.className = "rpe" + (readOnly ? " rpe--readonly" : "");
+  const labelId = `rpe-label-${++rpeIds}`;
+
+  if (readOnly && !Number.isFinite(value)) {
+    root.innerHTML = `<p class="rpe-label" id="${labelId}">${esc(label)}</p><p class="rpe-empty">No RPE logged</p>`;
+    return root;
+  }
+
+  const v0 = Number.isFinite(value) ? value : 5;
+  root.innerHTML = `
+    <p class="rpe-label" id="${labelId}">${esc(label)} <span class="rpe-num" aria-hidden="true"></span></p>
+    <div class="rpe-track">
+      <span class="rpe-ticks" aria-hidden="true">${"<i></i>".repeat(10)}</span>
+      <span class="rpe-thumb" aria-hidden="true"></span>
+    </div>
+    <div class="rpe-ends" aria-hidden="true"><span>Easy</span><span>Moderate</span><span>Max effort</span></div>`;
+
+  const track = root.querySelector(".rpe-track");
+  const thumb = root.querySelector(".rpe-thumb");
+  const num = root.querySelector(".rpe-num");
+  let input = null;
+
+  if (readOnly) {
+    track.setAttribute("role", "meter");
+    track.setAttribute("aria-labelledby", labelId);
+    track.setAttribute("aria-valuemin", "1");
+    track.setAttribute("aria-valuemax", "10");
+  } else {
+    input = document.createElement("input");
+    Object.assign(input, { type: "range", min: 1, max: 10, step: 1, className: "rpe-input" });
+    input.setAttribute("aria-labelledby", labelId);
+    input.addEventListener("input", () => {
+      set(Number(input.value));
+      if (onChange) onChange(Number(input.value));
+    });
+    track.append(input);
+  }
+
+  function set(v) {
+    root.style.setProperty("--rpe-pos", (v - 1) / 9);
+    thumb.textContent = v;
+    num.textContent = `· ${v} / 10`;
+    const text = `${v} out of 10, ${effortWord(v)}`;
+    if (readOnly) {
+      track.setAttribute("aria-valuenow", String(v));
+      track.setAttribute("aria-valuetext", text);
+    } else {
+      input.value = v;
+      input.setAttribute("aria-valuetext", text);
+    }
+  }
+  set(v0);
+
+  return Object.assign(root, { setValue: set });
+}
+
+/* ============================================================
+   Runs panel (under the distance chart) and run pop-out
+   ============================================================ */
+
+const TAG_CLASS = { "Race": "race", "Long run": "long", "Workout": "workout", "Recovery": "recovery" };
+const tagChip = (tag) => (tag ? `<span class="tag tag--${TAG_CLASS[tag]}">${esc(tag)}</span>` : "");
+const LOCK_ICON = `<svg class="lock" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" focusable="false">
+  <path d="M4.5 7V5.25a3.5 3.5 0 0 1 7 0V7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+  <rect x="2.75" y="7" width="10.5" height="7.25" rx="2.2" fill="currentColor"/></svg>`;
+
+let panelRuns = []; // runs listed in the panel, in display order
+
+function renderRunsPanel({ announce = false } = {}) {
+  const panel = document.getElementById("runs-panel");
+  const row = distanceView && distanceView.rows.find(isSelected);
+  if (!row) { panel.hidden = true; return; }
+
+  const title = document.getElementById("runs-title");
+  const body = document.getElementById("runs-body");
+  const hasRuns = Array.isArray(row.runs);
+  panelRuns = hasRuns ? sortedRuns(row) : [];
+  const n = panelRuns.length;
+
+  title.innerHTML = `${esc(prettyRange(row))} <span class="runs-title-meta">· ${fmtKm(row.km)} km${hasRuns && n ? ` · ${n} run${n === 1 ? "" : "s"}` : ""}</span>`;
+
+  if (!hasRuns) {
+    const canConnect = !document.getElementById("source").hidden && !document.getElementById("source-connect").hidden;
+    body.innerHTML = `
+      <p class="runs-empty">Connect your training log to see this week's runs.</p>
+      ${canConnect ? `<button type="button" class="runs-connect">Connect training log</button>` : ""}`;
+  } else if (!n) {
+    body.innerHTML = `<p class="runs-empty">Rest week, no runs logged.</p>`;
+  } else {
+    body.innerHTML = `<ol class="run-list">${panelRuns.map((run, i) => {
+      const pace = runPace(run);
+      const twoToday = sameDayCount(panelRuns, run) > 1;
+      return `
+      <li>
+        <button type="button" class="run-row" data-i="${i}" aria-haspopup="dialog" style="--accent:${colorAt(run.date.getDay() + 1)}">
+          <span class="run-stamp" aria-hidden="true">
+            <span class="run-stamp-day">${DAY_NAMES[run.date.getDay()].slice(0, 3)}</span>
+            <span class="run-stamp-date">${run.date.getDate()}</span>
+          </span>
+          <span class="run-main">
+            <span class="run-name">${esc(runTitle(run))}</span>
+            <span class="run-meta">
+              <span class="visually-hidden">${DAY_NAMES[run.date.getDay()]} ${MONTH_NAMES[run.date.getMonth()]} ${run.date.getDate()}${twoToday ? (run.slot === "AM" ? ", morning" : ", evening") : ""}: </span>
+              ${twoToday ? `${run.slot} · ` : ""}${fmtKm(run.km)} km${pace ? ` · ${pace} /km` : ""}
+            </span>
+          </span>
+          ${tagChip(runTag(run.description))}
+        </button>
+      </li>`;
+    }).join("")}</ol>`;
+  }
+
+  panel.hidden = false;
+  if (announce) {
+    document.getElementById("runs-status").textContent =
+      `${prettyRange(row)}: ${!hasRuns ? "connect your training log to see runs" : n ? `${n} run${n === 1 ? "" : "s"}` : "no runs logged"}.`;
+  }
+}
+
+let runOpener = null;
+
+function openRun(run, opener) {
+  const box = document.getElementById("run-dialog");
+  if (typeof box.showModal !== "function") return;
+  runOpener = opener;
+
+  const tag = runTag(run.description);
+  const title = runTitle(run);
+  const twoToday = sameDayCount(panelRuns, run) > 1;
+  const d = run.date;
+  const dateText = `${DAY_NAMES[d.getDay()]}, ${MONTH_NAMES[d.getMonth()]} ${d.getDate()}` +
+    (d.getFullYear() !== new Date().getFullYear() ? `, ${d.getFullYear()}` : "") +
+    (twoToday ? (run.slot === "AM" ? " · Morning" : " · Evening") : "");
+  const desc = run.description.trim();
+  const showDesc = desc && desc.replace(/^plan\s*:\s*/i, "").replace(/[.\s]+$/, "").toLowerCase() !== title.toLowerCase();
+  const stat = (label, value) => `
+    <div class="run-stat"><dt>${label}</dt><dd>${value ? esc(value) : `<span class="run-stat-none">—</span>`}</dd></div>`;
+
+  const content = document.getElementById("run-content");
+  content.innerHTML = `
+    <p class="run-when">${tagChip(tag)}<span>${esc(dateText)}</span></p>
+    <h2 class="run-title" id="run-title">${esc(title)}</h2>
+    ${showDesc ? `<p class="run-desc">${esc(desc)}</p>` : ""}
+    <dl class="run-stats">
+      ${stat("Distance", `${fmtKm(run.km)} km`)}
+      ${stat("Time", runTime(run))}
+      ${stat("Pace", runPace(run) && `${runPace(run)} /km`)}
+    </dl>
+    <div class="run-rpe"></div>
+    <section class="run-notes" aria-labelledby="run-notes-label">
+      <h3 class="run-notes-label" id="run-notes-label">${LOCK_ICON}Notes</h3>
+      ${run.notes ? `<p class="run-notes-text">${esc(run.notes)}</p>` : `<p class="run-notes-text run-notes-text--none">No notes</p>`}
+    </section>`;
+  content.querySelector(".run-rpe").append(createRpeScale({ value: run.rpe, readOnly: true }));
+
+  box.showModal();
+  box.querySelector(".run-sheet-inner").scrollTop = 0;
+}
+
+function setupRuns() {
+  setupBarHits();
+
+  document.getElementById("runs-close").addEventListener("click", () => closeRunsPanel());
+
+  document.getElementById("runs-body").addEventListener("click", (e) => {
+    const row = e.target.closest(".run-row");
+    if (row) { openRun(panelRuns[Number(row.dataset.i)], row); return; }
+    if (e.target.closest(".runs-connect")) document.getElementById("source-connect").click();
+  });
+
+  const box = document.getElementById("run-dialog");
+  box.addEventListener("click", (e) => { if (e.target === box) box.close(); }); // tap outside closes
+  box.addEventListener("close", () => {
+    if (runOpener && runOpener.isConnected) runOpener.focus();
+    runOpener = null;
+  });
 }
 
 /* ============================================================
@@ -530,6 +983,7 @@ function renderAll(rows, sourceNote) {
   clearError();
   renderHero(rows);
   renderCharts(rows);
+  renderRunsPanel(); // keeps an open week open when the data source changes
   const first = rows[0];
   document.getElementById("foot-text").textContent =
     `${rows.length} weeks logged since ${first.start ? `${MONTHS[first.start.getMonth()]} ${first.start.getFullYear()}` : first.label}` +
@@ -573,8 +1027,9 @@ function setSource(state, text) {
 async function goLive() {
   setSource("loading", "Reading your training log…");
   try {
-    const { title, weeks } = await SheetSource.load();
+    const { title, weeks, doubleDays } = await SheetSource.load();
     if (!weeks.length) throw new Error("Connected, but found no weeks with km logged yet.");
+    if (doubleDays && doubleDays.length) console.info("Days with more than one run:", doubleDays.map((d) => d.toDateString()));
     renderAll(weeks, "live from your training log");
     const t = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
     setSource("live", `Live from “${title}” · ${t}`);
@@ -624,6 +1079,7 @@ async function init() {
   }
   setChartDefaults();
   setupChartControls();
+  setupRuns();
 
   try {
     csvRows = await loadTrainingData();

@@ -1,12 +1,15 @@
 /* ------------------------------------------------------------
    Miles & Mornings — private Google Sheets source
    Signs in with Google (read-only) and turns the coach's training log
-   into weekly rows: [{ label, km, trimp, start: Date }, …] oldest → newest.
+   into weekly rows: [{ label, km, trimp, start: Date, runs: […] }, …] oldest → newest.
 
-   Only columns A, B, N and T are ever requested:
-     A  weekday / "WEEKLY TOTALS"     B  date
-     N  km                            T  TRIMP
-   Sleep, injuries, mental health and comments never leave the sheet.
+   Only these columns are ever requested:
+     A  weekday / "WEEKLY TOTALS"     B  date          C  AM / PM
+     D  workout description           I  total time (min)
+     N  km                            P  session RPE (1-10)
+     T  TRIMP                         U  comments (shown as private "Notes")
+   Injuries (Q), sleep (R) and mental health (S) never leave the sheet.
+   Weekly km and TRIMP still come only from the WEEKLY TOTALS rows.
    ------------------------------------------------------------ */
 
 const SheetSource = (() => {
@@ -118,13 +121,13 @@ const SheetSource = (() => {
 
   /* ---------- reading the sheet ---------- */
 
-  /** Fetch columns A, B, N, T and return { title, weeks }. `t` overrides the stored token (for testing). */
+  /** Fetch the columns listed at the top and return { title, weeks, doubleDays }. `t` overrides the stored token (for testing). */
   async function load(t = token) {
     if (!t) throw friendly("Not signed in.", { needsSignIn: true });
 
     const id = encodeURIComponent(cfg.spreadsheetId);
     const tab = `'${cfg.tabName.replace(/'/g, "''")}'`;
-    const cols = ["A", "B", "N", "T"];
+    const cols = ["A", "B", "C", "D", "I", "N", "P", "T", "U"];
     const params = cols.map((c) => "ranges=" + encodeURIComponent(`${tab}!${c}${FIRST_DATA_ROW}:${c}`)).join("&");
     const url =
       `https://sheets.googleapis.com/v4/spreadsheets/${id}/values:batchGet?${params}` +
@@ -146,21 +149,27 @@ const SheetSource = (() => {
 
     const meta = metaRes.ok ? await metaRes.json().catch(() => ({})) : {};
     const title = (meta.properties && meta.properties.title) || "training log";
-    const [A, B, N, T] = (body.valueRanges || []).map((vr) => (vr.values && vr.values[0]) || []);
-    return { title, weeks: parseWeeks(A, B, N, T, title) };
+    const got = (body.valueRanges || []).map((vr) => (vr.values && vr.values[0]) || []);
+    const c = Object.fromEntries(cols.map((k, i) => [k, got[i] || []]));
+    return { title, ...parseWeeks(c, title) };
   }
 
   /**
    * Walk the log top to bottom. Day rows carry dates (AM rows only); each
    * "WEEKLY TOTALS" row closes the week above it and holds the coach's own
-   * km (N) and TRIMP (T) for that week.
+   * km (N) and TRIMP (T) for that week. Day rows with km become runs.
+   * `c` maps column letters to arrays: { A, B, C, D, I, N, P, T, U }.
    */
-  function parseWeeks(A, B, N, T, title = "") {
+  function parseWeeks(c, title = "") {
+    const [A, B, C, D, I, N, P, T, U] = ["A", "B", "C", "D", "I", "N", "P", "T", "U"].map((k) => c[k] || []);
     const today = new Date();
     let year = seasonStartYear(B, title, today);
     let prevMonth = null;
     let weekStart = null;
+    let day = null;        // the current day's date (PM rows inherit the AM row's)
+    let runs = [];
     const weeks = [];
+    const doubleDays = []; // days with km on more than one row
 
     const len = Math.max(A.length, B.length);
     for (let i = 0; i < len; i++) {
@@ -168,9 +177,11 @@ const SheetSource = (() => {
 
       if (/weekly\s*totals?/i.test(a)) {
         if (weekStart) {
-          weeks.push({ start: weekStart, km: num(N[i]), trimp: num(T[i]) });
+          weeks.push({ start: weekStart, km: num(N[i]), trimp: num(T[i]), runs });
         }
         weekStart = null;
+        day = null;
+        runs = [];
         continue;
       }
 
@@ -182,6 +193,26 @@ const SheetSource = (() => {
         if (prevMonth !== null && d.month < prevMonth) year++;
         prevMonth = d.month;
         if (!weekStart) weekStart = new Date(year, d.month, d.day);
+        day = new Date(year, d.month, d.day);
+      }
+
+      // A run is a day row with km. Rest days and strength-only rows have none.
+      const km = num(N[i]);
+      if (day && Number.isFinite(km) && km > 0) {
+        const slotText = String(C[i] ?? "");
+        const slot = /pm/i.test(slotText) ? "PM" : /am/i.test(slotText) ? "AM" : (d ? "AM" : "PM");
+        const minutes = num(I[i]);
+        const rpe = num(P[i]);
+        if (runs.some((r) => r.date.getTime() === day.getTime())) doubleDays.push(day);
+        runs.push({
+          date: day,
+          slot,
+          km,
+          minutes: Number.isFinite(minutes) && minutes > 0 ? minutes : null,
+          rpe: Number.isFinite(rpe) && rpe >= 1 && rpe <= 10 ? rpe : null,
+          description: cleanText(D[i]),
+          notes: cleanText(U[i]),
+        });
       }
     }
 
@@ -190,12 +221,19 @@ const SheetSource = (() => {
     const firstKm = rows.findIndex((w) => Number.isFinite(w.km) && w.km > 0);
     rows = firstKm === -1 ? [] : rows.slice(firstKm);
 
-    return rows.map((w) => ({
+    const out = rows.map((w) => ({
       label: weekLabel(w.start),
       start: w.start,
       km: Number.isFinite(w.km) ? w.km : 0,
       trimp: Number.isFinite(w.trimp) ? w.trimp : 0,
+      runs: w.runs.filter((r) => r.date <= today),
     }));
+    return { weeks: out, doubleDays: doubleDays.filter((d) => d <= today) };
+  }
+
+  /** Cell → tidy text: "" for blanks, line breaks kept. */
+  function cleanText(v) {
+    return String(v ?? "").replace(/\r\n?/g, "\n").replace(/[ \t]+\n/g, "\n").trim();
   }
 
   /** Cell → number. Trims float noise (22.049999… → 22.05) so rounding matches what the sheet shows. */

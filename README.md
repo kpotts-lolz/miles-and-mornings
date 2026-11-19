@@ -4,6 +4,7 @@ A small, handmade replacement for Strava's training view. It's one static page s
 
 - **This week**: the current week's kilometres as a big number, a mini bar strip of the last 4 weeks, and their weekly average. There's deliberately no "up/down vs before" comparison.
 - **Weekly distance**: rounded bars in rotating accent colours, a **3 months / 6 months / This year** toggle (3 months by default; a week counts if any of its days fall in the period, so "This year" includes the week containing January 1), and a dashed average line. The average is calculated from the weeks currently shown, so it changes with the toggle.
+- **That week's runs**: tap a bar on the weekly distance chart to open a panel underneath listing that week's runs, Monday first. Tap a run to see its details. Tap the same bar again (or ×) to close the panel, or tap another bar to switch weeks. Runs come only from the live training log (see below). With `weekly.csv` the panel asks you to connect.
 - **Training load**: weekly TRIMP, with a short explanation of what TRIMP means and its own **3 months / 6 months / This year** toggle, separate from the distance chart.
 - **Goals**: target time and pace for 5K, 10K, half and marathon.
 - **Recent races**: finish time and average pace for each race.
@@ -126,13 +127,41 @@ At **http://localhost:8000**, a pill under the title says "Showing weekly.csv" a
 The sign-in lasts about an hour and survives page reloads in the same tab. After that, click Connect again.
 
 **How it reads the sheet** (`sheets.js`):
-- It requests **only columns A, B, N and T**: the weekday or "WEEKLY TOTALS" label, the date, km, and TRIMP. Sleep, injuries, mental health and comments are never fetched.
-- Each **WEEKLY TOTALS** row gives that week's km and TRIMP, using the coach's own numbers. The week's dates come from the day rows above it.
+- It requests **only these columns**:
+
+  | Column | Header in the sheet | Used for |
+  | --- | --- | --- |
+  | A | weekday / WEEKLY TOTALS | finding each week |
+  | B | Date | run dates, week labels |
+  | C | AM / PM | ordering runs within a day |
+  | D | WORKOUT | run title, description and tag |
+  | I | TOTAL TIME (min) | moving time and pace |
+  | N | Km Total | run distance; weekly km (totals row) |
+  | P | Total Session RPE (1-10) | the effort scale |
+  | T | TRIMP | weekly training load (totals row) |
+  | U | Comments | the run's **Notes** |
+
+- **Comments (column U) are now fetched** and shown as each run's "Notes", with a small lock icon. They can include things like menstrual-cycle, stress or bloodwork notes. They're only shown while you're signed in, in your own browser tab, and are never saved, cached or published. The lock marks them as private; it doesn't hide them, so be mindful when sharing your screen.
+- **Injuries (Q), sleep (R) and mental health (S) are never fetched**, and neither are the coach's working columns (E–H, J–M, O).
+- Each **WEEKLY TOTALS** row gives that week's km and TRIMP, using the coach's own numbers, so the charts don't depend on the runs. The week's dates come from the day rows above it.
+- **Runs:** every AM/PM day row with km becomes a run. Rows without km (rest days, strength-only sessions) are skipped. A PM row takes its date from the AM row above it.
 - The years stored behind the sheet's dates aren't reliable (later rows still say 2025), so it uses only month and day. It counts the year up from the title ("2025-26" → starts 2025) each time the dates wrap from December to January.
 - Weeks before km logging began (before Jul 21, 2025) and weeks that haven't started yet are skipped.
 - The average line isn't read from the sheet. It's the mean km of the weeks shown in the current 3 months / 6 months / This year view.
 
 **Where it works:** the Connect pill appears at `http://localhost:8000` and on any `https://` address (like GitHub Pages), as long as `config.js` is there. Sign-in only succeeds from addresses listed under **Authorized JavaScript origins** in Google Cloud; anywhere else Google shows an "origin_mismatch" error. Without `config.js`, the pill stays hidden and the site uses `weekly.csv`. The sheet itself is never published or link-shared.
+
+## Runs: titles, pace, effort and tags
+
+- **Title**: taken from the first line of the workout description. The coach writes "warm-up: main set/cool-down", so the title is the main set: `15' easy + strides: Race: Navy 5k in Esquimalt/15' easy` → `Navy 5k in Esquimalt`. Without a colon, it's the first phrase (up to a comma or semicolon), skipping a warm-up: `1.5 mile WU, 3x1 mile @ "5-10k pace", …` → `3x1 mile @ "5-10k pace"`. Labels like "plan:", "Race:", "AM:", "PM:" and "XT:" are dropped. The full description shows underneath in the run's pop-out.
+- **Two runs in a day** (km on both the AM and PM rows) show as two separate entries, marked AM and PM.
+- **Pace** = moving time ÷ km, shown as min:sec /km. If the time is missing, time and pace show "—".
+- **Effort** uses `createRpeScale()` in `app.js`, one component with two modes: read-only (a meter, used now) and editable (a real slider, for the manual-entry form).
+- **Tags** (Race, Long run, Workout, Recovery) are guessed from the description using `RUN_TAG_RULES` at the top of `app.js`. Rules are checked top to bottom, and the first match wins. A run that matches nothing gets no tag. To add a keyword, add a pattern to the right rule.
+  - **Race**: "Race:", "race" in quotes, parkrun, time trial, TT, PB/PR.
+  - **Long run**: "long run" or "LR", a description starting with 75 minutes or more (`80-90' easy`), or 10–19 miles.
+  - **Workout**: reps like `5 x 3'` (strides and pickups count), intervals, tempo, threshold, fartlek, repeats, hill sprints, "@ … pace", progression.
+  - **Recovery**: "recovery run/jog", a description starting with "recovery", or shakeout.
 
 ## Switching to a published Google Sheet (public option)
 
